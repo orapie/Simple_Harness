@@ -1,0 +1,56 @@
+# Byte-compiled Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging and build output
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Test, lint, and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local RAG/runtime artifacts
+.rag_index/
+data/**
+!data/
+*.log
+*.pid
+*.tmp
+*.temp
+
+# Local model and experiment outputs
+models/
+checkpoints/
+outputs/
+runs/
+.cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

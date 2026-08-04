@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-rag"
+version = "0.1.0"
+description = "A small local RAG system with role-style prompt composition."
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.1",
+  "transformers>=4.40",
+]
+
+[project.optional-dependencies]
+documents = [
+  "pypdf>=4.0",
+  "python-docx>=1.1",
+]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+simple-rag = "simple_rag.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["simple_rag*"]
