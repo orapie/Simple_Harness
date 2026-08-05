@@ -2,7 +2,7 @@
 
 本目录只负责角色卡、公共剧情事件、知识边界和运行时 Prompt 编译，不包含 Harness、模型推理、训练、GGUF 转换或 Android 集成代码。
 
-当前数据仅以 `../1453.txt` 至 `../1458.txt` 为事实来源。`../qa.json` 只用于测试问题和人工复核，不能覆盖原文证据。
+当前数据默认以 `../1453.txt` 至 `../1458.txt` 为事实来源。也可以通过 `--evidence-root` 或运行时 `evidence_root` 参数指向统一数据目录，例如 `../data/novel_test`。`qa.json` 只用于测试问题和人工复核，不能覆盖原文证据。
 
 ## 已交付内容
 
@@ -92,10 +92,19 @@ python scripts\validate_character_data.py
 python -m unittest discover -s tests -v
 ```
 
+如果小说原文统一放在根目录 `data\novel_test` 下：
+
+```powershell
+python scripts\validate_character_data.py --evidence-root ..\data\novel_test
+$env:CHARACTER_EVIDENCE_ROOT="..\data\novel_test"
+python -m unittest discover -s tests -v
+```
+
 编译单轮消息：
 
 ```powershell
 python scripts\compile_prompt.py `
+  --evidence-root ..\data\novel_test `
   --npc lu_jiangxian `
   --input "玄谙究竟是什么？" `
   --cutoff evt-010 `
@@ -107,6 +116,7 @@ python scripts\compile_prompt.py `
 
 ```powershell
 python scripts\compile_prompt.py `
+  --evidence-root ..\data\novel_test `
   --npc lu_jiangxian `
   --input "玄谙究竟是什么？" `
   --cutoff evt-010 `
@@ -118,6 +128,7 @@ python scripts\compile_prompt.py `
 
 ```powershell
 python scripts\run_qa_cases.py `
+  --evidence-root ..\data\novel_test `
   --npc xuan_an `
   --cutoff evt-018 `
   --output examples\qa_xuan_an_evt018.json
@@ -131,6 +142,7 @@ python scripts\run_qa_cases.py `
 
 ```powershell
 python scripts\generate_character_cards.py prepare `
+  --evidence-root ..\data\novel_test `
   --npc 陆江仙 玄谙 `
   --output build\extraction_request.txt
 ```
@@ -138,9 +150,11 @@ python scripts\generate_character_cards.py prepare `
 将请求交给任意支持严格 JSON 输出的离线或在线提取模型。模型结果不能直接发布，必须由人工核对后写入 `characters/` 和 `story/story_events.jsonl`，再运行：
 
 ```powershell
-python scripts\validate_character_data.py
+python scripts\validate_character_data.py --evidence-root ..\data\novel_test
 python scripts\generate_character_cards.py report `
+  --evidence-root ..\data\novel_test `
   --output reports\character_cards.md
+$env:CHARACTER_EVIDENCE_ROOT="..\data\novel_test"
 python -m unittest discover -s tests -v
 ```
 
@@ -160,7 +174,10 @@ python -m unittest discover -s tests -v
 from pathlib import Path
 from runtime import PromptCompiler, RuntimeContext
 
-compiler = PromptCompiler(Path("E:/DuanCe/novel_test/character_system"))
+compiler = PromptCompiler(
+    Path("E:/DuanCe/novel_test/character_system"),
+    evidence_root=Path("E:/DuanCe/novel_test/data/novel_test"),
+)
 compiled = compiler.build_npc_prompt(
     npc_id="lu_jiangxian",
     user_input="玄谙究竟是什么？",

@@ -7,6 +7,7 @@ from typing import Any
 
 from .knowledge_filter import filter_by_knowledge_boundary
 from .memory_retriever import RetrievedMemory, retrieve_episodic_memories
+from .paths import default_evidence_root
 from .retrieval import KeywordRetriever, RetrievedEvent, StoryRetriever
 from .validation import load_json, load_jsonl, validate_events, validate_npc
 
@@ -41,11 +42,17 @@ class PromptCompiler:
     def __init__(
         self,
         root: Path | str,
+        evidence_root: Path | str | None = None,
         retriever: StoryRetriever | None = None,
         validate_on_load: bool = True,
     ) -> None:
         self.root = Path(root).resolve()
-        self.novel_dir = self.root.parent
+        self.evidence_root = (
+            Path(evidence_root).resolve()
+            if evidence_root is not None
+            else default_evidence_root(self.root)
+        )
+        self.novel_dir = self.evidence_root
         self.retriever = retriever or KeywordRetriever()
         self.events = load_jsonl(self.root / "story" / "story_events.jsonl")
         self.events_by_id = {event["event_id"]: event for event in self.events}
@@ -54,7 +61,7 @@ class PromptCompiler:
         )
         self._npc_cache: dict[str, dict[str, Any]] = {}
         if validate_on_load:
-            validate_events(self.events, self.novel_dir)
+            validate_events(self.events, self.evidence_root)
 
     def load_npc(self, npc_id: str) -> dict[str, Any]:
         if npc_id not in self._npc_cache:
@@ -62,7 +69,7 @@ class PromptCompiler:
             if not path.is_file():
                 raise KeyError(f"unknown NPC: {npc_id}")
             npc = load_json(path)
-            validate_npc(npc, self.novel_dir)
+            validate_npc(npc, self.evidence_root)
             self._npc_cache[npc_id] = npc
         return self._npc_cache[npc_id]
 

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from runtime.prompt_compiler import PromptCompiler, RuntimeContext  # noqa: E402
+from runtime.paths import default_evidence_root  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,14 +21,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cutoff", default="evt-018")
     parser.add_argument("--max-chars", type=int, default=4500)
     parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=default_evidence_root(ROOT),
+        help="Directory containing source evidence files such as 1453.txt and qa.json",
+    )
+    parser.add_argument("--qa-path", type=Path, help="Path to qa.json; defaults to evidence root")
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    cases = json.loads((ROOT.parent / "qa.json").read_text(encoding="utf-8"))
-    compiler = PromptCompiler(ROOT)
+    qa_path = args.qa_path or args.evidence_root / "qa.json"
+    cases = json.loads(qa_path.read_text(encoding="utf-8"))
+    compiler = PromptCompiler(ROOT, evidence_root=args.evidence_root)
     output = []
     for case in cases[: args.limit]:
         compiled = compiler.build_npc_prompt(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from runtime.prompt_compiler import PromptCompiler, RuntimeContext  # noqa: E402
+from runtime.paths import default_evidence_root  # noqa: E402
 from runtime.validation import (  # noqa: E402
     load_json,
     load_jsonl,
@@ -17,6 +19,10 @@ from runtime.validation import (  # noqa: E402
     validate_events,
     validate_npc,
 )
+
+
+DEFAULT_EVIDENCE_ROOT = default_evidence_root(ROOT)
+EVIDENCE_ROOT = Path(os.environ.get("CHARACTER_EVIDENCE_ROOT", DEFAULT_EVIDENCE_ROOT))
 
 
 class CharacterDataTests(unittest.TestCase):
@@ -31,14 +37,14 @@ class CharacterDataTests(unittest.TestCase):
         expected_top_level = set(self.npcs[0])
         expected_identity = set(self.npcs[0]["identity_core"])
         for npc in self.npcs:
-            validate_npc(npc, ROOT.parent)
+            validate_npc(npc, EVIDENCE_ROOT)
             self.assertEqual(expected_top_level, set(npc))
             self.assertEqual(expected_identity, set(npc["identity_core"]))
             self.assertGreaterEqual(len(npc["identity_core"]["psychological_traits"]), 8)
             self.assertLessEqual(len(npc["identity_core"]["psychological_traits"]), 12)
 
     def test_events_and_cross_references_validate(self) -> None:
-        validate_events(self.events, ROOT.parent)
+        validate_events(self.events, EVIDENCE_ROOT)
         validate_cross_references(self.npcs, self.events)
         self.assertEqual(20, len({event["event_id"] for event in self.events}))
         self.assertEqual(
@@ -54,7 +60,7 @@ class CharacterDataTests(unittest.TestCase):
 class PromptCompilerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.compiler = PromptCompiler(ROOT)
+        cls.compiler = PromptCompiler(ROOT, evidence_root=EVIDENCE_ROOT)
         cls.scenarios = json.loads(
             (ROOT / "tests" / "fixtures" / "scenarios.json").read_text(encoding="utf-8")
         )

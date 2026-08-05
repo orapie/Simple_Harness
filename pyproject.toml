@@ -25,4 +25,4 @@ dev = [
 simple-rag = "simple_rag.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["simple_rag*"]
+include = ["simple_rag*", "character_system*"]

@@ -16,12 +16,13 @@ from runtime.validation import (  # noqa: E402
     validate_events,
     validate_npc,
 )
+from runtime.paths import default_evidence_root  # noqa: E402
 
 
 NOVEL_FILES = [f"{number}.txt" for number in range(1453, 1459)]
 
 
-def build_extraction_request(npc_names: list[str]) -> str:
+def build_extraction_request(npc_names: list[str], evidence_root: Path) -> str:
     prompt = (ROOT / "prompts" / "character_extraction.prompt").read_text(encoding="utf-8")
     parts = [
         prompt,
@@ -31,20 +32,19 @@ def build_extraction_request(npc_names: list[str]) -> str:
         "【带稳定行号的小说原文】",
     ]
     for filename in NOVEL_FILES:
-        path = ROOT.parent / filename
+        path = evidence_root / filename
         lines = path.read_text(encoding="utf-8").splitlines()
         parts.append(f"\n### {filename}")
         parts.extend(f"{filename}:L{index} {line}" for index, line in enumerate(lines, 1))
     return "\n".join(parts)
 
 
-def build_report() -> str:
-    novel_dir = ROOT.parent
+def build_report(evidence_root: Path) -> str:
     events = load_jsonl(ROOT / "story" / "story_events.jsonl")
     npcs = [load_json(path) for path in sorted((ROOT / "characters").glob("*.json"))]
     for npc in npcs:
-        validate_npc(npc, novel_dir)
-    validate_events(events, novel_dir)
+        validate_npc(npc, evidence_root)
+    validate_events(events, evidence_root)
     validate_cross_references(npcs, events)
 
     lines = [
@@ -87,8 +87,20 @@ def parse_args() -> argparse.Namespace:
     prepare = subparsers.add_parser("prepare", help="Build a line-numbered extraction request")
     prepare.add_argument("--npc", nargs="+", default=["陆江仙", "玄谙"])
     prepare.add_argument("--output", type=Path)
+    prepare.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=default_evidence_root(ROOT),
+        help="Directory containing source evidence files such as 1453.txt",
+    )
     report = subparsers.add_parser("report", help="Validate data and build the review report")
     report.add_argument("--output", type=Path)
+    report.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=default_evidence_root(ROOT),
+        help="Directory containing source evidence files such as 1453.txt",
+    )
     return parser.parse_args()
 
 
@@ -104,9 +116,9 @@ def emit(text: str, output: Path | None) -> None:
 def main() -> int:
     args = parse_args()
     if args.command == "prepare":
-        emit(build_extraction_request(args.npc), args.output)
+        emit(build_extraction_request(args.npc, args.evidence_root), args.output)
     else:
-        emit(build_report(), args.output)
+        emit(build_report(args.evidence_root), args.output)
     return 0
 
 
