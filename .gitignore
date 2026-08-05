@@ -28,13 +28,22 @@ htmlcov/
 .rag_index/
 data/**
 !data/
+!data/.gitkeep
 *.log
 *.pid
 *.tmp
 *.temp
 
 # Local model and experiment outputs
-models/
+models/**
+!models/
+!models/.gitkeep
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
 checkpoints/
 outputs/
 runs/

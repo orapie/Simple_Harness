@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,77 @@ class TransformersLLM(LocalLLM):
         ) + "\n\n<|assistant|>\n"
 
 
-def make_llm(model_name_or_path: str | None, device: str | None = None) -> LocalLLM:
-    if model_name_or_path:
+class GGUFLLM(LocalLLM):
+    def __init__(
+        self,
+        model_path: str,
+        n_ctx: int = 4096,
+        n_gpu_layers: int = 0,
+        chat_format: str | None = None,
+        verbose: bool = False,
+    ) -> None:
+        try:
+            from llama_cpp import Llama
+        except ImportError as exc:
+            raise RuntimeError(
+                "GGUF inference requires: python -m pip install -e '.[gguf]'"
+            ) from exc
+
+        path = Path(model_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"GGUF model file does not exist: {path}")
+        kwargs = {
+            "model_path": str(path),
+            "n_ctx": n_ctx,
+            "n_gpu_layers": n_gpu_layers,
+            "verbose": verbose,
+        }
+        if chat_format:
+            kwargs["chat_format"] = chat_format
+        self.model = Llama(**kwargs)
+
+    def generate(self, messages: list[dict[str, str]], options: GenerationOptions) -> str:
+        result = self.model.create_chat_completion(
+            messages=messages,
+            max_tokens=options.max_new_tokens,
+            temperature=options.temperature if options.do_sample else 0.0,
+            top_p=options.top_p,
+        )
+        message = result["choices"][0]["message"]
+        return str(message.get("content", "")).strip()
+
+
+def infer_model_backend(model_name_or_path: str | None, backend: str | None = None) -> str:
+    if not model_name_or_path:
+        return "echo"
+    if backend:
+        normalized = backend.lower()
+        if normalized not in {"transformers", "gguf"}:
+            raise ValueError("model backend must be one of: transformers, gguf")
+        return normalized
+    if Path(model_name_or_path).suffix.lower() == ".gguf":
+        return "gguf"
+    return "transformers"
+
+
+def make_llm(
+    model_name_or_path: str | None,
+    device: str | None = None,
+    backend: str | None = None,
+    gguf_n_ctx: int = 4096,
+    gguf_n_gpu_layers: int = 0,
+    gguf_chat_format: str | None = None,
+) -> LocalLLM:
+    selected = infer_model_backend(model_name_or_path, backend)
+    if selected == "gguf":
+        if model_name_or_path is None:
+            raise ValueError("GGUF backend requires a model path")
+        return GGUFLLM(
+            model_name_or_path,
+            n_ctx=gguf_n_ctx,
+            n_gpu_layers=gguf_n_gpu_layers,
+            chat_format=gguf_chat_format,
+        )
+    if selected == "transformers":
         return TransformersLLM(model_name_or_path, device=device)
     return PromptEchoLLM()

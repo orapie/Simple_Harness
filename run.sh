@@ -10,6 +10,10 @@ INDEX_PATH="${INDEX_PATH:-.rag_index/index.json}"
 ROLE_PATH="${ROLE_PATH:-configs/roles/default.json}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
 MODEL_PATH="${MODEL_PATH:-}"
+MODEL_BACKEND="${MODEL_BACKEND:-}"
+GGUF_N_CTX="${GGUF_N_CTX:-4096}"
+GGUF_N_GPU_LAYERS="${GGUF_N_GPU_LAYERS:-0}"
+GGUF_CHAT_FORMAT="${GGUF_CHAT_FORMAT:-}"
 CHARACTER_ROOT="${CHARACTER_ROOT:-character_system}"
 EVIDENCE_ROOT="${EVIDENCE_ROOT:-}"
 NPC_ID="${NPC_ID:-lu_jiangxian}"
@@ -43,6 +47,10 @@ Environment overrides:
   ROLE_PATH=configs/roles/default.json
   EMBEDDING_MODEL=/path/to/local/embedding-model
   MODEL_PATH=/path/to/local/chat-model
+  MODEL_BACKEND=transformers|gguf
+  GGUF_N_CTX=4096
+  GGUF_N_GPU_LAYERS=0
+  GGUF_CHAT_FORMAT=
   CHARACTER_ROOT=character_system
   EVIDENCE_ROOT=data/novel_test
   NPC_ID=lu_jiangxian
@@ -60,8 +68,9 @@ Examples:
   ./run.sh search "世界杯决赛后有什么商业争议？"
   ROLE_PATH=configs/roles/xuan_an.json ./run.sh prompt "请用角色口吻总结资料"
   MODEL_PATH=/path/to/local/chat-model DEVICE=mps ./run.sh chat "解释资料里的票价争议"
+  MODEL_PATH=/path/to/model.gguf MODEL_BACKEND=gguf GGUF_N_GPU_LAYERS=35 ./run.sh chat "解释资料里的票价争议"
   NPC_ID=lu_jiangxian CUTOFF=evt-010 ./run.sh character-rag-prompt "用陆江仙的口吻解释世界杯商业化争议"
-  NPC_ID=xuan_an CUTOFF=evt-018 MODEL_PATH=/path/to/local/chat-model ./run.sh character-rag-chat "结合资料谈谈球迷票价争议"
+  NPC_ID=xuan_an CUTOFF=evt-018 MODEL_PATH=/path/to/model.gguf ./run.sh character-rag-chat "结合资料谈谈球迷票价争议"
 USAGE
 }
 
@@ -87,6 +96,20 @@ if [[ -n "$EVIDENCE_ROOT" ]]; then
 fi
 if [[ -n "$CUTOFF" ]]; then
   character_args+=(--cutoff "$CUTOFF")
+fi
+
+llm_args=()
+if [[ -n "$MODEL_BACKEND" ]]; then
+  llm_args+=(--model-backend "$MODEL_BACKEND")
+fi
+if [[ -n "$GGUF_N_CTX" ]]; then
+  llm_args+=(--gguf-n-ctx "$GGUF_N_CTX")
+fi
+if [[ -n "$GGUF_N_GPU_LAYERS" ]]; then
+  llm_args+=(--gguf-n-gpu-layers "$GGUF_N_GPU_LAYERS")
+fi
+if [[ -n "$GGUF_CHAT_FORMAT" ]]; then
+  llm_args+=(--gguf-chat-format "$GGUF_CHAT_FORMAT")
 fi
 
 command="${1:-help}"
@@ -141,6 +164,7 @@ case "$command" in
       --temperature "$TEMPERATURE" \
       --top-p "$TOP_P" \
       "${model_args[@]}" \
+      "${llm_args[@]}" \
       "${chat_args[@]}"
     ;;
   character-rag-prompt)
@@ -170,6 +194,7 @@ case "$command" in
       --temperature "$TEMPERATURE" \
       --top-p "$TOP_P" \
       "${model_args[@]}" \
+      "${llm_args[@]}" \
       "${character_args[@]}" \
       "${chat_args[@]}"
     ;;

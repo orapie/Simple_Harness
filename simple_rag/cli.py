@@ -39,11 +39,8 @@ def main() -> None:
     chat_parser = subparsers.add_parser("chat", help="run retrieval and local generation")
     _add_query_args(chat_parser)
     _add_chat_common_args(chat_parser)
+    _add_model_args(chat_parser)
     chat_parser.add_argument("--model")
-    chat_parser.add_argument("--max-new-tokens", type=int, default=512)
-    chat_parser.add_argument("--temperature", type=float, default=0.7)
-    chat_parser.add_argument("--top-p", type=float, default=0.9)
-    chat_parser.add_argument("--no-sample", action="store_true")
 
     character_prompt_parser = subparsers.add_parser(
         "character-rag-prompt",
@@ -59,11 +56,8 @@ def main() -> None:
     )
     _add_query_args(character_chat_parser)
     _add_character_rag_common_args(character_chat_parser)
+    _add_model_args(character_chat_parser)
     character_chat_parser.add_argument("--model")
-    character_chat_parser.add_argument("--max-new-tokens", type=int, default=512)
-    character_chat_parser.add_argument("--temperature", type=float, default=0.7)
-    character_chat_parser.add_argument("--top-p", type=float, default=0.9)
-    character_chat_parser.add_argument("--no-sample", action="store_true")
     character_chat_parser.add_argument("--debug", action="store_true")
 
     args = parser.parse_args()
@@ -179,7 +173,7 @@ def handle_character_rag_chat(args: argparse.Namespace) -> None:
 
 def _build_pipeline(args: argparse.Namespace, model_name_or_path: str | None) -> RagPipeline:
     embedding_model = make_embedding_model(args.embedding_model, device=args.device)
-    llm = make_llm(model_name_or_path, device=args.device)
+    llm = _make_llm_from_args(args, model_name_or_path)
     return RagPipeline.from_index_file(
         args.index,
         embedding_model,
@@ -193,7 +187,7 @@ def _build_character_rag_pipeline(
     model_name_or_path: str | None,
 ) -> CharacterRagPipeline:
     embedding_model = make_embedding_model(args.embedding_model, device=args.device)
-    llm = make_llm(model_name_or_path, device=args.device)
+    llm = _make_llm_from_args(args, model_name_or_path)
     return CharacterRagPipeline.from_index_file(
         args.index,
         embedding_model,
@@ -201,6 +195,17 @@ def _build_character_rag_pipeline(
         prompt_builder=CharacterRagPromptBuilder(max_context_chars=args.max_context_chars),
         character_root=args.character_root,
         evidence_root=args.evidence_root,
+    )
+
+
+def _make_llm_from_args(args: argparse.Namespace, model_name_or_path: str | None):
+    return make_llm(
+        model_name_or_path,
+        device=args.device,
+        backend=getattr(args, "model_backend", None),
+        gguf_n_ctx=getattr(args, "gguf_n_ctx", 4096),
+        gguf_n_gpu_layers=getattr(args, "gguf_n_gpu_layers", 0),
+        gguf_chat_format=getattr(args, "gguf_chat_format", None),
     )
 
 
@@ -228,6 +233,17 @@ def _add_character_rag_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-context-chars", type=int, default=5000)
     parser.add_argument("--max-character-chars", type=int, default=4500)
+
+
+def _add_model_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model-backend", choices=["transformers", "gguf"])
+    parser.add_argument("--gguf-n-ctx", type=int, default=4096)
+    parser.add_argument("--gguf-n-gpu-layers", type=int, default=0)
+    parser.add_argument("--gguf-chat-format")
+    parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--top-p", type=float, default=0.9)
+    parser.add_argument("--no-sample", action="store_true")
 
 
 if __name__ == "__main__":

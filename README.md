@@ -31,6 +31,14 @@ python -m pip install -e .
 python -m pip install -e ".[documents]"
 ```
 
+如需接入 GGUF 格式本地大模型：
+
+```bash
+python -m pip install -e ".[gguf]"
+```
+
+Apple Silicon 上如果需要 Metal 加速，建议按 `llama-cpp-python` 当前平台说明安装带 Metal 的构建；本项目侧通过 `GGUF_N_GPU_LAYERS` 控制 offload 层数。
+
 ## 建索引
 
 默认索引 `data/`，输出到 `.rag_index/index.json`。不传 embedding 模型时使用内置哈希向量，便于离线快速验证；传入本地 embedding 模型路径时使用 `transformers` 生成向量。
@@ -83,7 +91,14 @@ python -m simple_rag.cli prompt \
 
 ## 接入本地大模型聊天
 
-`--model` 指向本地 `transformers` 兼容模型目录。未指定 `--model` 时，命令使用 `PromptEchoLLM` 回显最终 messages，方便检查检索和 prompt 注入效果；真正生成回答需要设置本地模型路径。
+未指定 `MODEL_PATH` / `--model` 时，命令使用 `PromptEchoLLM` 回显最终 messages，方便检查检索和 prompt 注入效果；真正生成回答需要设置本地模型路径。
+
+当前支持两种本地模型后端：
+
+- Transformers：`MODEL_PATH` 指向 Hugging Face `transformers` 兼容模型目录。
+- GGUF：`MODEL_PATH` 指向 `.gguf` 文件，默认会自动选择 GGUF 后端；也可以显式设置 `MODEL_BACKEND=gguf`。
+
+### Transformers 模型目录
 
 ```bash
 MODEL_PATH=/path/to/local/chat-model DEVICE=mps ./run.sh chat "请用角色口吻解释资料里的世界杯商业化争议。"
@@ -110,6 +125,99 @@ python -m simple_rag.cli chat \
   --top-p 0.9 \
   --query "玄谙会如何评价这些资料？"
 ```
+
+### GGUF 模型文件
+
+GGUF 后端使用 `llama-cpp-python`。先安装：
+
+```bash
+python -m pip install -e ".[gguf]"
+```
+
+如果本地还没有模型，可以先从 Hugging Face 下载一个 GGUF 文件。安装下载工具：
+
+```bash
+python -m pip install -U huggingface_hub
+```
+
+公开模型通常可以直接下载；遇到 gated/private 模型时，先登录：
+
+```bash
+hf auth login
+```
+
+在 Hugging Face 搜索模型时，优先找带 `GGUF` 的仓库，并选择单个 `.gguf` 文件下载。首次本地测试建议从 `Q4_K_M.gguf` 量化文件开始；它通常比 `Q8_0.gguf` 更省内存，也比更低位量化更稳。下载命令格式如下：
+
+```bash
+mkdir -p models
+hf download <repo-id> <model-file.gguf> --local-dir models/<model-name>
+```
+
+示例：
+
+```bash
+hf download bartowski/Llama-3.2-1B-Instruct-GGUF \
+  Llama-3.2-1B-Instruct-Q4_K_M.gguf \
+  --local-dir models/llama-3.2-1b-instruct
+```
+
+下载完成后，`MODEL_PATH` 指向这个 `.gguf` 文件：
+
+```bash
+MODEL_PATH=models/llama-3.2-1b-instruct/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+```
+
+`models/` 和 `*.gguf` 已在 `.gitignore` 中忽略，模型文件会留在本地，不会被提交到仓库。
+
+普通 RAG 接 GGUF：
+
+```bash
+MODEL_PATH=/path/to/model.gguf \
+MODEL_BACKEND=gguf \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh chat "解释资料里的世界杯商业化争议"
+```
+
+Character + RAG 接 GGUF，例如 MiniCPM 一类 GGUF 模型：
+
+```bash
+NPC_ID=lu_jiangxian \
+CUTOFF=evt-010 \
+MODEL_PATH=/path/to/minicpm-model.gguf \
+MODEL_BACKEND=gguf \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh character-rag-chat "用陆江仙的口吻解释世界杯商业化争议。"
+```
+
+等价 Python 命令：
+
+```bash
+python -m simple_rag.cli character-rag-chat \
+  --index .rag_index/index.json \
+  --npc lu_jiangxian \
+  --cutoff evt-010 \
+  --model /path/to/minicpm-model.gguf \
+  --model-backend gguf \
+  --gguf-n-ctx 4096 \
+  --gguf-n-gpu-layers 35 \
+  --query "用陆江仙的口吻解释世界杯商业化争议。"
+```
+
+GGUF 常用参数：
+
+```bash
+MODEL_BACKEND=gguf          # 可省略；.gguf 后缀会自动识别
+GGUF_N_CTX=4096             # 上下文长度
+GGUF_N_GPU_LAYERS=35        # GPU/Metal offload 层数；CPU 运行可设 0
+GGUF_CHAT_FORMAT=           # 特殊模型需要时指定 llama-cpp-python 的 chat_format
+MAX_NEW_TOKENS=512
+TEMPERATURE=0.7
+TOP_P=0.9
+```
+
+如果模型 GGUF 文件内带有 chat template，通常不需要设置 `GGUF_CHAT_FORMAT`。如果某个 MiniCPM GGUF 需要特定 chat format，再按该模型发布说明设置。
 
 ## 单独运行 Character System
 
@@ -205,6 +313,18 @@ NPC_ID=lu_jiangxian \
 CUTOFF=evt-010 \
 MODEL_PATH=/path/to/local/chat-model \
 DEVICE=mps \
+./run.sh character-rag-chat "用陆江仙的口吻解释世界杯商业化争议。"
+```
+
+使用 GGUF / MiniCPM GGUF 时：
+
+```bash
+NPC_ID=lu_jiangxian \
+CUTOFF=evt-010 \
+MODEL_PATH=/path/to/minicpm-model.gguf \
+MODEL_BACKEND=gguf \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
 ./run.sh character-rag-chat "用陆江仙的口吻解释世界杯商业化争议。"
 ```
 
