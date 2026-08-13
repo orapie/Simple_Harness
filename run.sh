@@ -11,6 +11,9 @@ ROLE_PATH="${ROLE_PATH:-configs/roles/default.json}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
 MODEL_PATH="${MODEL_PATH:-}"
 MODEL_BACKEND="${MODEL_BACKEND:-}"
+HARNESS_ROOT="${HARNESS_ROOT:-harness_logic/data}"
+HARNESS_MODELS_ROOT="${HARNESS_MODELS_ROOT:-models}"
+HARNESS_MODEL_ID="${HARNESS_MODEL_ID:-}"
 GGUF_N_CTX="${GGUF_N_CTX:-4096}"
 GGUF_N_GPU_LAYERS="${GGUF_N_GPU_LAYERS:-0}"
 GGUF_CHAT_FORMAT="${GGUF_CHAT_FORMAT:-}"
@@ -38,6 +41,8 @@ Usage:
   ./run.sh chat "问题"
   ./run.sh character-rag-prompt "问题"
   ./run.sh character-rag-chat "问题"
+  ./run.sh harness list
+  ./run.sh harness status
   ./run.sh test
 
 Environment overrides:
@@ -47,7 +52,10 @@ Environment overrides:
   ROLE_PATH=configs/roles/default.json
   EMBEDDING_MODEL=/path/to/local/embedding-model
   MODEL_PATH=/path/to/local/chat-model
-  MODEL_BACKEND=transformers|gguf
+  MODEL_BACKEND=transformers|gguf|harness
+  HARNESS_ROOT=harness_logic/data
+  HARNESS_MODELS_ROOT=models
+  HARNESS_MODEL_ID=llama-3.2-1b-instruct
   GGUF_N_CTX=4096
   GGUF_N_GPU_LAYERS=0
   GGUF_CHAT_FORMAT=
@@ -71,6 +79,9 @@ Examples:
   MODEL_PATH=/path/to/model.gguf MODEL_BACKEND=gguf GGUF_N_GPU_LAYERS=35 ./run.sh chat "解释资料里的票价争议"
   NPC_ID=lu_jiangxian CUTOFF=evt-010 ./run.sh character-rag-prompt "用陆江仙的口吻解释世界杯商业化争议"
   NPC_ID=xuan_an CUTOFF=evt-018 MODEL_PATH=/path/to/model.gguf ./run.sh character-rag-chat "结合资料谈谈球迷票价争议"
+  ./run.sh harness list
+  ./run.sh harness character-prompt --character lu_jiangxian --input "玄谙究竟是什么？" --cutoff evt-010
+  MODEL_BACKEND=harness HARNESS_MODEL_ID=llama-3.2-1b-instruct ./run.sh chat "解释资料里的票价争议"
 USAGE
 }
 
@@ -110,6 +121,11 @@ if [[ -n "$GGUF_N_GPU_LAYERS" ]]; then
 fi
 if [[ -n "$GGUF_CHAT_FORMAT" ]]; then
   llm_args+=(--gguf-chat-format "$GGUF_CHAT_FORMAT")
+fi
+llm_args+=(--harness-root "$HARNESS_ROOT")
+llm_args+=(--harness-models-root "$HARNESS_MODELS_ROOT")
+if [[ -n "$HARNESS_MODEL_ID" ]]; then
+  llm_args+=(--harness-model-id "$HARNESS_MODEL_ID")
 fi
 
 command="${1:-help}"
@@ -198,9 +214,13 @@ case "$command" in
       "${character_args[@]}" \
       "${chat_args[@]}"
     ;;
+  harness)
+    "$PYTHON_BIN" -m harness_logic --root "$HARNESS_ROOT" --models-root "$HARNESS_MODELS_ROOT" "$@"
+    ;;
   test)
     "$PYTHON_BIN" -m unittest discover -s tests -v
     "$PYTHON_BIN" -m unittest discover -s character_system/tests -v
+    "$PYTHON_BIN" -m unittest discover -s harness_logic/tests -v
     ;;
   *)
     echo "unknown command: $command" >&2

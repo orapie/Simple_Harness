@@ -26,6 +26,7 @@ dev = [
 
 [project.scripts]
 simple-rag = "simple_rag.cli:main"
+harness-logic = "harness_logic.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["simple_rag*", "character_system*"]
+include = ["simple_rag*", "character_system*", "harness_logic*"]

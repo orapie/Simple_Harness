@@ -8,6 +8,7 @@
 - 通过角色 JSON 控制大模型的身份、语气、行为规则和知识边界。
 - 可接入 `character_system`，把小说角色卡、剧情边界和 `data/` 中其他资料合并成 Character + RAG prompt。
 - 可接入任意 Hugging Face `transformers` 兼容的本地模型路径。
+- 已接入从 MiniCPM Android 提取的 `harness_logic`，可在本项目内运行模型注册、artifact 状态、下载计划、mock backend、角色 prompt、session 和 memory 编排。
 
 推荐数据结构：
 
@@ -169,6 +170,13 @@ MODEL_PATH=models/llama-3.2-1b-instruct/Llama-3.2-1B-Instruct-Q4_K_M.gguf
 
 `models/` 和 `*.gguf` 已在 `.gitignore` 中忽略，模型文件会留在本地，不会被提交到仓库。
 
+`models/` 是当前项目统一的本地模型文件池：
+
+- 普通 RAG 可以直接用 `MODEL_PATH` 指向任意本地模型文件或 Transformers 模型目录。
+- Harness 会按自己的模型注册表读取 `models/<model_id>/<artifact_file>`，例如 `models/llama-3.2-1b-instruct/Llama-3.2-1B-Instruct-Q4_K_M.gguf`。
+
+也就是说，两者不需要两套模型目录；区别在于普通 RAG 直接吃路径，Harness 按模型 ID 和 artifact 文件名管理路径。
+
 普通 RAG 接 GGUF：
 
 ```bash
@@ -246,6 +254,242 @@ python3 character_system/scripts/compile_prompt.py \
 ```
 
 输出中真正要送给模型的是 `messages`；`debug` 只用于本地检查知识边界和检索决策。
+
+## MiniCPM Harness Logic
+
+`harness_logic/` 是从 MiniCPM Android 项目迁入的 Python Harness 编排层。它现在作为 Simple Harness 的本地包运行，默认运行状态放在 `harness_logic/data/`，默认模型 artifact 读取仓库根目录的 `models/`，并复用本项目根目录的 `character_system/` 和 `data/novel_test`。
+
+### 当前 models 目录示例
+
+当前仓库根目录的 `models/` 里有这些本地文件：
+
+```text
+models/
+├── MiniCPM5-1B-Claude-Opus-Fable5-Thinking-Q8_0.gguf
+└── llama-3.2-1b-instruct/
+    └── Llama-3.2-1B-Instruct-Q4_K_M.gguf
+```
+
+它们的使用方式不同：
+
+| 文件 | 当前用途 | 说明 |
+| --- | --- | --- |
+| `models/MiniCPM5-1B-Claude-Opus-Fable5-Thinking-Q8_0.gguf` | 普通 RAG 直接用 `MODEL_PATH` | 文件在 `models/` 根下，当前不匹配 Harness 注册表要求的 `models/<model_id>/<artifact_file>` 结构。 |
+| `models/llama-3.2-1b-instruct/Llama-3.2-1B-Instruct-Q4_K_M.gguf` | Harness 结构化路径示例 | 路径匹配 Harness 的 `llama-3.2-1b-instruct` 注册项；如果它只是占位文件，需要替换成真实 GGUF 后才能真实推理。 |
+
+完整使用顺序建议如下：
+
+1. 安装依赖。
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[gguf]"
+```
+
+2. 建立 RAG 索引。
+
+```bash
+./run.sh index
+```
+
+3. 先检查 RAG 检索结果。
+
+```bash
+./run.sh search "世界杯决赛后有什么商业争议？"
+```
+
+4. 检查最终会送给模型的 RAG prompt。
+
+```bash
+ROLE_PATH=configs/roles/xuan_an.json \
+./run.sh prompt "请用角色口吻总结资料里的争议。"
+```
+
+5. 用当前 MiniCPM5 GGUF 文件直接跑普通 RAG。
+
+```bash
+MODEL_PATH=models/MiniCPM5-1B-Claude-Opus-Fable5-Thinking-Q8_0.gguf \
+MODEL_BACKEND=gguf \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh chat "解释资料里的世界杯商业化争议"
+```
+
+6. 用同一个 MiniCPM5 文件跑 Character + RAG。
+
+```bash
+MODEL_PATH=models/MiniCPM5-1B-Claude-Opus-Fable5-Thinking-Q8_0.gguf \
+MODEL_BACKEND=gguf \
+NPC_ID=lu_jiangxian \
+CUTOFF=evt-010 \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh character-rag-chat "用陆江仙的口吻解释世界杯商业化争议。"
+```
+
+7. 查看 Harness 注册模型和当前 artifact 状态。
+
+```bash
+./run.sh harness list
+./run.sh harness status
+```
+
+8. 使用 Harness 管理的模型路径跑 RAG。
+
+如果要通过 Harness 读取 `llama-3.2-1b-instruct`，文件必须存在于：
+
+```text
+models/llama-3.2-1b-instruct/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+```
+
+确认是真实 GGUF 文件后运行：
+
+```bash
+MODEL_BACKEND=harness \
+HARNESS_MODEL_ID=llama-3.2-1b-instruct \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh chat "解释资料里的世界杯商业化争议"
+```
+
+9. 使用 Harness 管理的模型路径跑 Character + RAG。
+
+```bash
+MODEL_BACKEND=harness \
+HARNESS_MODEL_ID=llama-3.2-1b-instruct \
+NPC_ID=lu_jiangxian \
+CUTOFF=evt-010 \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh character-rag-chat "用陆江仙的口吻解释世界杯商业化争议。"
+```
+
+10. 如果想让当前 MiniCPM5 文件也走 Harness 管理，需要把它整理成 Harness 注册表对应的目录和文件名。当前注册表里 MiniCPM5 的模型 ID 和文件名是：
+
+```text
+models/minicpm5-0.9b/MiniCPM5-1B-Q4_K_M.gguf
+```
+
+可以复制或移动成本地 Harness 结构：
+
+```bash
+mkdir -p models/minicpm5-0.9b
+cp models/MiniCPM5-1B-Claude-Opus-Fable5-Thinking-Q8_0.gguf \
+  models/minicpm5-0.9b/MiniCPM5-1B-Q4_K_M.gguf
+```
+
+然后用 Harness 后端运行：
+
+```bash
+MODEL_BACKEND=harness \
+HARNESS_MODEL_ID=minicpm5-0.9b \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh chat "解释资料里的世界杯商业化争议"
+```
+
+注意：这一步只是让 Harness 能按注册表找到本地文件；文件本身是否完全适配该注册项，还取决于模型实际格式、chat template 和量化版本。
+
+查看注册模型：
+
+```bash
+./run.sh harness list
+```
+
+查看当前选中模型状态：
+
+```bash
+./run.sh harness status
+```
+
+编译 Harness 角色 prompt：
+
+```bash
+./run.sh harness character-prompt \
+  --character lu_jiangxian \
+  --input "玄谙究竟是什么？" \
+  --cutoff evt-010
+```
+
+运行 mock 角色对话：
+
+```bash
+./run.sh harness character-chat \
+  --backend mock \
+  --model llama-3.2-1b-instruct \
+  --character xuan_an \
+  --input "你为什么停止拼合七枚鉴身碎片？" \
+  --cutoff evt-018 \
+  --touch-demo-files
+```
+
+也可以直接使用 Python 入口：
+
+```bash
+python -m harness_logic list
+python -m harness_logic character-pack validate
+```
+
+当前 Harness backend 仍是 mock backend；它能验证模型注册、文件状态、Prompt 编译、Session 和 Memory 链路，但不代表真实 LLM 推理已经接通。
+
+### RAG 使用 Harness 管理的本地 GGUF
+
+普通 RAG 和 Character + RAG 的检索逻辑保持不变；当设置 `MODEL_BACKEND=harness` 时，生成阶段会从 `harness_logic` 的模型注册表和运行目录中解析本地 GGUF 文件，然后复用本项目的 GGUF 后端执行真实推理。
+
+先查看模型 ID 和 artifact 文件名：
+
+```bash
+./run.sh harness list
+./run.sh harness status
+```
+
+把 GGUF 放到 Harness 期望的位置，例如：
+
+```text
+models/llama-3.2-1b-instruct/Llama-3.2-1B-Instruct-Q4_K_M.gguf
+```
+
+也可以先看下载来源：
+
+```bash
+./run.sh harness select llama-3.2-1b-instruct
+./run.sh harness download-plan
+```
+
+普通 RAG 接 Harness 管理的本地 GGUF：
+
+```bash
+MODEL_BACKEND=harness \
+HARNESS_MODEL_ID=llama-3.2-1b-instruct \
+GGUF_N_CTX=4096 \
+GGUF_N_GPU_LAYERS=35 \
+./run.sh chat "解释资料里的世界杯商业化争议"
+```
+
+Character + RAG 接 Harness 管理的本地 GGUF：
+
+```bash
+MODEL_BACKEND=harness \
+HARNESS_MODEL_ID=llama-3.2-1b-instruct \
+NPC_ID=lu_jiangxian \
+CUTOFF=evt-010 \
+./run.sh character-rag-chat "用陆江仙的口吻解释世界杯商业化争议。"
+```
+
+等价 Python 命令：
+
+```bash
+python -m simple_rag.cli chat \
+  --index .rag_index/index.json \
+  --query "解释资料里的世界杯商业化争议" \
+  --model-backend harness \
+  --harness-root harness_logic/data \
+  --harness-models-root models \
+  --harness-model-id llama-3.2-1b-instruct
+```
+
+如果对应 GGUF 文件不存在，命令会直接报出缺失的本地 artifact 路径；这时先按 `download-plan` 提示下载或手动放入该路径。
 
 ## 结合 Character System 的 RAG
 

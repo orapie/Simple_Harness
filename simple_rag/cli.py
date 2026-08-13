@@ -124,6 +124,8 @@ def handle_chat(args: argparse.Namespace) -> None:
         do_sample=not args.no_sample,
     )
     response = pipeline.answer(args.query, RoleProfile.load(args.role), top_k=args.top_k, options=options)
+    _print_model_prompt(response.prompt.messages)
+    print("\n--- answer ---")
     print(response.answer)
     print("\n--- sources ---")
     print(json.dumps(response.prompt.sources, ensure_ascii=False, indent=2))
@@ -163,12 +165,19 @@ def handle_character_rag_chat(args: argparse.Namespace) -> None:
         max_character_chars=args.max_character_chars,
         options=options,
     )
+    _print_model_prompt(response.prompt.messages)
+    print("\n--- answer ---")
     print(response.answer)
     print("\n--- sources ---")
     print(json.dumps(response.prompt.sources, ensure_ascii=False, indent=2))
     if args.debug:
         print("\n--- character debug ---")
         print(json.dumps(response.prompt.character_debug, ensure_ascii=False, indent=2))
+
+
+def _print_model_prompt(messages: list[dict[str, str]]) -> None:
+    print("--- prompt ---")
+    print(json.dumps({"messages": messages}, ensure_ascii=False, indent=2))
 
 
 def _build_pipeline(args: argparse.Namespace, model_name_or_path: str | None) -> RagPipeline:
@@ -206,6 +215,9 @@ def _make_llm_from_args(args: argparse.Namespace, model_name_or_path: str | None
         gguf_n_ctx=getattr(args, "gguf_n_ctx", 4096),
         gguf_n_gpu_layers=getattr(args, "gguf_n_gpu_layers", 0),
         gguf_chat_format=getattr(args, "gguf_chat_format", None),
+        harness_root=getattr(args, "harness_root", "harness_logic/data"),
+        harness_models_root=getattr(args, "harness_models_root", "models"),
+        harness_model_id=getattr(args, "harness_model_id", None),
     )
 
 
@@ -236,10 +248,13 @@ def _add_character_rag_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_model_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model-backend", choices=["transformers", "gguf"])
+    parser.add_argument("--model-backend", choices=["transformers", "gguf", "harness"])
     parser.add_argument("--gguf-n-ctx", type=int, default=4096)
     parser.add_argument("--gguf-n-gpu-layers", type=int, default=0)
     parser.add_argument("--gguf-chat-format")
+    parser.add_argument("--harness-root", default="harness_logic/data")
+    parser.add_argument("--harness-models-root", default="models")
+    parser.add_argument("--harness-model-id")
     parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=0.9)

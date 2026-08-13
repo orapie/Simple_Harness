@@ -115,13 +115,63 @@ class GGUFLLM(LocalLLM):
         return str(message.get("content", "")).strip()
 
 
+class HarnessManagedLLM(LocalLLM):
+    def __init__(
+        self,
+        harness_root: str | Path,
+        harness_models_root: str | Path | None = None,
+        model_id: str | None = None,
+        n_ctx: int = 4096,
+        n_gpu_layers: int = 0,
+        chat_format: str | None = None,
+    ) -> None:
+        try:
+            from harness_logic.registry import HarnessModelRegistry
+            from harness_logic.store import LlamaModelStore
+        except ImportError as exc:
+            raise RuntimeError("Harness backend requires the harness_logic package") from exc
+
+        self.harness_root = Path(harness_root).expanduser()
+        self.harness_models_root = Path(harness_models_root).expanduser() if harness_models_root else None
+        self.model_store = LlamaModelStore(self.harness_root, model_root=self.harness_models_root)
+        if model_id:
+            model = HarnessModelRegistry.find_legacy_model(model_id)
+            if model is None:
+                known = ", ".join(model.id for model in HarnessModelRegistry.available_model_infos())
+                raise ValueError(f"Unknown harness model id: {model_id}. Known ids: {known}")
+            self.model_id = model.id
+            llm_path = self.model_store.model_dir_for(model) / model.gguf_file_name
+        else:
+            files = self.model_store.get_selected_model_files()
+            self.model_id = files.model.id
+            llm_path = files.artifact_files["llm"]
+        if not llm_path.is_file():
+            raise FileNotFoundError(
+                "Harness model artifact is missing: "
+                f"{llm_path}. Run `./run.sh harness download-plan` to see download sources, "
+                "then place the GGUF at that path."
+            )
+        self.model_path = llm_path
+        self.llm = GGUFLLM(
+            str(llm_path),
+            n_ctx=n_ctx,
+            n_gpu_layers=n_gpu_layers,
+            chat_format=chat_format,
+        )
+
+    def generate(self, messages: list[dict[str, str]], options: GenerationOptions) -> str:
+        return self.llm.generate(messages, options)
+
+
 def infer_model_backend(model_name_or_path: str | None, backend: str | None = None) -> str:
     if not model_name_or_path:
+        if backend and backend.lower() == "harness":
+            return "harness"
         return "echo"
     if backend:
         normalized = backend.lower()
-        if normalized not in {"transformers", "gguf"}:
-            raise ValueError("model backend must be one of: transformers, gguf")
+        if normalized not in {"transformers", "gguf", "harness"}:
+            raise ValueError("model backend must be one of: transformers, gguf, harness")
         return normalized
     if Path(model_name_or_path).suffix.lower() == ".gguf":
         return "gguf"
@@ -135,8 +185,20 @@ def make_llm(
     gguf_n_ctx: int = 4096,
     gguf_n_gpu_layers: int = 0,
     gguf_chat_format: str | None = None,
+    harness_root: str | Path = "harness_logic/data",
+    harness_models_root: str | Path | None = "models",
+    harness_model_id: str | None = None,
 ) -> LocalLLM:
     selected = infer_model_backend(model_name_or_path, backend)
+    if selected == "harness":
+        return HarnessManagedLLM(
+            harness_root,
+            harness_models_root=harness_models_root,
+            model_id=harness_model_id or model_name_or_path,
+            n_ctx=gguf_n_ctx,
+            n_gpu_layers=gguf_n_gpu_layers,
+            chat_format=gguf_chat_format,
+        )
     if selected == "gguf":
         if model_name_or_path is None:
             raise ValueError("GGUF backend requires a model path")
